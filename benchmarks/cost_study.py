@@ -65,10 +65,10 @@ def counts(sizes: list[int], seeds: int, out: Path) -> None:
                         "method": method,
                         "seeds": seeds,
                         "found": found,
-                        "runs_mean": round(statistics.mean(runs), 1),
+                        "runs_mean": f"{statistics.mean(runs):.1f}",
                         "runs_max": max(runs),
                         "cleaner_runs_mean": (
-                            round(statistics.mean(cleaner_runs), 1) if cleaner_runs else ""
+                            f"{statistics.mean(cleaner_runs):.1f}" if cleaner_runs else ""
                         ),
                     }
                 )
