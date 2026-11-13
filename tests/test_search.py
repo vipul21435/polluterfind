@@ -13,6 +13,7 @@ from suites import (
 )
 
 from polluterfind import verify as v
+from polluterfind.report import find_dict, find_markdown
 from polluterfind.runner import CommandRunner
 from polluterfind.search import find
 
@@ -45,6 +46,10 @@ def test_brittle_test_and_state_setter(make_project):
     assert result.kind == v.BRITTLE and result.role == "state-setter"
     assert result.causes == [ids[3]] and result.confirmed
     assert result.cleaners == []
+    assert find_dict(result)["state_setters"] == [ids[3]]
+    markdown = find_markdown(result)
+    assert "state-setters (1, by bisection)" in markdown
+    assert "victim passed in 2 of 2 reruns" in markdown and "cleaners" not in markdown
 
 
 def test_not_order_dependent_runs_no_search(make_project):
