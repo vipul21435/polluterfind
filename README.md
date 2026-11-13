@@ -176,10 +176,12 @@ the shape, not the absolute values; nearly all of each run is pytest start-up.
 | 2000 | paired polluters | ddmin | 1 | 58 | 36.7 | 0.63 |
 | 2000 | paired polluters | ddmin | 2 | 62 | 19.8 | 0.32 |
 
-Every row found the planted tests, and the run counts equal the in-process model's counts for
-seed 0, which checks the model against real pytest. The linear scan was timed only at 100 tests
-(98 runs, 33.3 s); at larger sizes only its run counts (table above) were measured. With two workers, ddmin on the 2,000-test paired case needed 62 runs instead of 58
-(a round's subsets are tried two at a time) and took 19.8 s instead of 36.7 s.
+Every row found the planted tests. The run counts of the one-worker rows equal the in-process
+model's counts for seed 0, which checks the model against real pytest. "Seconds per run" is wall
+time divided by runs. The linear scan was timed only at 100 tests (98 runs, 33.3 s); at larger
+sizes only its run counts (table above) were measured. With two workers, ddmin on the
+2,000-test paired case needed 62 runs instead of 58 (a round's subsets are tried two at a time)
+and took 19.8 s instead of 36.7 s.
 
 **The bundled example** (quickstart above): 1 polluter and 1 cleaner among 11 tests, found in
 20 runs (3 of them for the search itself) and 8.2 s, as shown in the quickstart.
