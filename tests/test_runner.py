@@ -110,3 +110,65 @@ def test_collect_lists_ids_in_default_order(make_project):
 def test_collect_reports_errors(make_project):
     with pytest.raises(RuntimeError, match="collection failed"):
         collect_pytest(make_project({"test_bad.py": "import not_a_module_here\n"}))
+
+
+def test_jobs_run_in_isolated_copies(make_project):
+    files = dict(SUITE)
+    # The victim also fails if another run left a marker file in the working directory.
+    files["test_files.py"] = """
+        import os
+        import time
+
+        def test_writes_marker():
+            open("marker.txt", "w").close()
+            time.sleep(0.3)
+            os.remove("marker.txt")
+
+        def test_no_marker():
+            assert not os.path.exists("marker.txt")
+    """
+    project = make_project(files)
+    orders = [["test_files.py::test_writes_marker"], ["test_files.py::test_no_marker"]] * 2
+    with CommandRunner(project, jobs=2, timeout=120) as runner:
+        assert len(runner.slots) == 2 and project not in runner.slots
+        assert all((slot / "test_a.py").exists() for slot in runner.slots)
+        results = runner.run_many(orders, fresh=True)
+        assert [r.passed(order[0]) for r, order in zip(results, orders, strict=True)] == [True] * 4
+        assert runner.stats.runs == 4
+        # Duplicates without fresh run once, cached orders are reused.
+        again = runner.run_many([orders[1], orders[1], orders[0]])
+        assert runner.stats.runs == 4 and again[0] is again[1]
+        workdir = runner.slots[0].parent.parent
+    assert not workdir.exists()
+    assert not (project / "marker.txt").exists()
+
+
+def test_reordered_run_is_counted(make_project):
+    project = make_project(
+        {
+            "test_fix.py": """
+                import pytest
+
+                @pytest.fixture(scope="module", params=[1, 2])
+                def value(request):
+                    return request.param
+
+                def test_a(value):
+                    pass
+
+                def test_b(value):
+                    pass
+            """
+        }
+    )
+    runner = CommandRunner(project, timeout=120)
+    order = ["test_fix.py::test_a[1]", "test_fix.py::test_a[2]", "test_fix.py::test_b[1]"]
+    result = runner.run(order)
+    # pytest groups tests by the module-scoped parameter, so test_b[1] runs before test_a[2].
+    assert result.executed == [
+        "test_fix.py::test_a[1]",
+        "test_fix.py::test_b[1]",
+        "test_fix.py::test_a[2]",
+    ]
+    assert not result.order_respected
+    assert runner.stats.reordered_runs == 1 and runner.stats.first_reordered is not None

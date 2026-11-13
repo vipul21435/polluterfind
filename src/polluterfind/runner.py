@@ -10,19 +10,25 @@ command must write, and ``{python}`` by the interpreter. The default template is
 ``-p no:cacheprovider`` keeps runs from writing ``.pytest_cache`` into the project.
 
 Results are cached by the ordered id tuple, so a search never pays twice for the same order.
+With ``jobs > 1`` the runner copies the project directory once per worker and runs batches of
+orders concurrently, one per copy, so that concurrent runs cannot see each other's files.
 """
 
 from __future__ import annotations
 
 import os
+import queue
 import shlex
+import shutil
 import signal
 import subprocess
 import sys
 import tempfile
 import threading
 import time
-from collections.abc import Sequence
+import weakref
+from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -32,6 +38,22 @@ PYTEST_TEMPLATE = (
     "{python} -m pytest -p no:randomly -p no:cacheprovider -q --junitxml={junit} {tests}"
 )
 TIMEOUT = "timeout"
+
+# Not copied into worker directories: version control, virtual environments and caches.
+COPY_IGNORE = (
+    ".git",
+    ".hg",
+    ".svn",
+    ".venv",
+    "venv",
+    ".tox",
+    ".nox",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    "node_modules",
+)
 
 
 @dataclass
@@ -68,10 +90,121 @@ class RunStats:
     cache_hits: int = 0
     tests_executed: int = 0
     seconds: float = 0.0
+    reordered_runs: int = 0
+    first_reordered: tuple[tuple[str, ...], tuple[str, ...]] | None = None
 
 
-class CommandRunner:
-    """Runs a command template in a project directory and caches results by test order."""
+class BaseRunner:
+    """Caching, statistics and batching shared by every runner; subclasses run one order."""
+
+    def __init__(self, jobs: int = 1) -> None:
+        if jobs < 1:
+            raise ValueError("jobs must be at least 1")
+        self.jobs = jobs
+        self.stats = RunStats()
+        self._cache: dict[tuple[str, ...], RunResult] = {}
+        self._lock = threading.Lock()
+
+    # Subclasses implement this; ``slot`` is the index of the worker running it.
+    def _execute(self, order: tuple[str, ...], slot: int) -> RunResult:
+        raise NotImplementedError
+
+    def _acquire_slot(self) -> int:
+        return 0
+
+    def _release_slot(self, slot: int) -> None:
+        pass
+
+    def repro_command(self, order: Sequence[str]) -> str:
+        return shlex.join(order)
+
+    def cached(self, order: Sequence[str]) -> RunResult | None:
+        with self._lock:
+            return self._cache.get(tuple(order))
+
+    def _record(self, key: tuple[str, ...], result: RunResult) -> None:
+        with self._lock:
+            self.stats.runs += 1
+            self.stats.tests_executed += len(key)
+            self.stats.seconds += result.seconds
+            if not result.order_respected:
+                self.stats.reordered_runs += 1
+                if self.stats.first_reordered is None:
+                    self.stats.first_reordered = (key, tuple(result.executed))
+            self._cache.setdefault(key, result)
+
+    def _run_one(self, key: tuple[str, ...]) -> RunResult:
+        slot = self._acquire_slot()
+        try:
+            result = self._execute(key, slot)
+        finally:
+            self._release_slot(slot)
+        self._record(key, result)
+        return result
+
+    def run(self, order: Sequence[str], *, fresh: bool = False) -> RunResult:
+        """Run ``order``; reuse a cached result unless ``fresh`` is set (for reruns)."""
+        key = tuple(order)
+        if not fresh:
+            with self._lock:
+                if key in self._cache:
+                    self.stats.cache_hits += 1
+                    return self._cache[key]
+        return self._run_one(key)
+
+    def run_many(self, orders: Sequence[Sequence[str]], *, fresh: bool = False) -> list[RunResult]:
+        """Run several orders, up to ``jobs`` at a time; results come back in input order.
+
+        Without ``fresh``, cached orders are not rerun and duplicates run once. With ``fresh``
+        every entry runs, which is how reruns of one order are requested.
+        """
+        keys = [tuple(order) for order in orders]
+        results: dict[int, RunResult] = {}
+        pending: dict[tuple[str, ...], list[int]] = {}
+        to_run: list[tuple[str, ...]] = []
+        for i, key in enumerate(keys):
+            if not fresh:
+                with self._lock:
+                    hit = self._cache.get(key)
+                if hit is not None:
+                    with self._lock:
+                        self.stats.cache_hits += 1
+                    results[i] = hit
+                    continue
+                if key in pending:
+                    pending[key].append(i)
+                    continue
+                pending[key] = [i]
+                to_run.append(key)
+            else:
+                pending.setdefault(key, []).append(i)
+                to_run.append(key)
+        if self.jobs == 1 or len(to_run) <= 1:
+            outputs = [self._run_one(key) for key in to_run]
+        else:
+            with ThreadPoolExecutor(max_workers=self.jobs) as pool:
+                outputs = list(pool.map(self._run_one, to_run))
+        if fresh:
+            for i, result in enumerate(outputs):
+                results[i] = result
+        else:
+            for key, result in zip(to_run, outputs, strict=True):
+                for i in pending[key]:
+                    results[i] = result
+        return [results[i] for i in range(len(keys))]
+
+    def close(self) -> None:
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
+
+class CommandRunner(BaseRunner):
+    """Runs a command template in a project directory (or in per-worker copies of it)."""
 
     def __init__(
         self,
@@ -81,21 +214,42 @@ class CommandRunner:
         python: str | None = None,
         timeout: float | None = None,
         env: dict[str, str] | None = None,
+        jobs: int = 1,
     ) -> None:
+        super().__init__(jobs)
         self.project = Path(project).resolve()
         self.template = shlex.split(template) if isinstance(template, str) else list(template)
         if "{tests}" not in self.template:
             raise ValueError("the command template needs a {tests} argument")
         if not any("{junit}" in arg for arg in self.template):
             raise ValueError("the command template needs a {junit} placeholder")
+        if not self.project.is_dir():
+            raise ValueError(f"project directory not found: {self.project}")
         self.python = python or sys.executable
         self.timeout = timeout
         self.env = env
-        self.stats = RunStats()
-        self._cache: dict[tuple[str, ...], RunResult] = {}
-        self._lock = threading.Lock()
         self._counter = 0
         self._workdir = Path(tempfile.mkdtemp(prefix="polluterfind-"))
+        self._finalizer = weakref.finalize(self, shutil.rmtree, self._workdir, True)
+        self.slots: list[Path] = [self.project]
+        if jobs > 1:
+            self.slots = [self._copy_project(i) for i in range(jobs)]
+        self._free: queue.Queue[int] = queue.Queue()
+        for i in range(len(self.slots)):
+            self._free.put(i)
+
+    def _copy_project(self, index: int) -> Path:
+        target = self._workdir / f"worker-{index}" / self.project.name
+        shutil.copytree(
+            self.project, target, symlinks=True, ignore=shutil.ignore_patterns(*COPY_IGNORE)
+        )
+        return target
+
+    def _acquire_slot(self) -> int:
+        return self._free.get()
+
+    def _release_slot(self, slot: int) -> None:
+        self._free.put(slot)
 
     def argv(self, order: Sequence[str], junit: str) -> list[str]:
         argv: list[str] = []
@@ -125,33 +279,15 @@ class CommandRunner:
                 parts.append(arg.replace("{python}", python))
         return shlex.join(parts)
 
-    def cached(self, order: Sequence[str]) -> RunResult | None:
+    def _execute(self, order: tuple[str, ...], slot: int) -> RunResult:
         with self._lock:
-            return self._cache.get(tuple(order))
-
-    def run(self, order: Sequence[str], *, fresh: bool = False) -> RunResult:
-        """Run ``order``; reuse a cached result unless ``fresh`` is set (for reruns)."""
-        key = tuple(order)
-        with self._lock:
-            if not fresh and key in self._cache:
-                self.stats.cache_hits += 1
-                return self._cache[key]
             self._counter += 1
             junit = self._workdir / f"run-{self._counter}.junit.xml"
-        result = self._execute(key, junit)
-        with self._lock:
-            self.stats.runs += 1
-            self.stats.tests_executed += len(key)
-            self.stats.seconds += result.seconds
-            self._cache.setdefault(key, result)
-        return result
-
-    def _execute(self, order: tuple[str, ...], junit: Path) -> RunResult:
         env = {**os.environ, **(self.env or {})}
         start = time.perf_counter()
         process = subprocess.Popen(
             self.argv(order, str(junit)),
-            cwd=self.project,
+            cwd=self.slots[slot],
             env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -182,6 +318,37 @@ class CommandRunner:
             timed_out=timed_out,
             output_tail=output.decode("utf-8", "replace")[-2000:],
         )
+
+    def close(self) -> None:
+        self._finalizer()
+
+
+class SimulatedRunner(BaseRunner):
+    """An in-process runner driven by a function from an order to outcomes.
+
+    It shares the caching and batching code with ``CommandRunner`` and is what the tests and the
+    run-count part of the cost study use; it never starts a process. ``executed`` may reorder the
+    tests to model a runner that does not honour the requested order.
+    """
+
+    def __init__(
+        self,
+        outcomes: Callable[[tuple[str, ...]], dict[str, str]],
+        *,
+        executed: Callable[[tuple[str, ...]], list[str]] | None = None,
+        jobs: int = 1,
+    ) -> None:
+        super().__init__(jobs)
+        self._outcomes = outcomes
+        self._executed = executed
+
+    def _execute(self, order: tuple[str, ...], slot: int) -> RunResult:
+        outcomes = self._outcomes(order)
+        executed = self._executed(order) if self._executed else list(order)
+        return RunResult(order, outcomes, executed, returncode=0, seconds=0.0)
+
+    def repro_command(self, order: Sequence[str]) -> str:
+        return "python -m pytest " + shlex.join(order)
 
 
 def _kill(process: subprocess.Popen) -> None:
