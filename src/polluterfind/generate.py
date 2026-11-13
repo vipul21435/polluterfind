@@ -53,9 +53,17 @@ class Plan:
             if any(o == op for o, _ in self.effects[i])
         ]
 
+    def _index(self) -> dict[str, int]:
+        key = (self.n, self.per_file, self.module)
+        cached = self.__dict__.get("_index_cache")
+        if cached is None or cached[0] != key:
+            cached = (key, {self.test_id(i): i for i in range(self.n)})
+            self.__dict__["_index_cache"] = cached
+        return cached[1]
+
     def outcomes(self, order: tuple[str, ...]) -> dict[str, str]:
         """Predicted outcome of every test in ``order``."""
-        index = {self.test_id(i): i for i in range(self.n)}
+        index = self._index()
         state: set[str] = set()
         result = {}
         for nodeid in order:
