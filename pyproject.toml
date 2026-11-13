@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "polluterfind"
+version = "0.1.0"
+description = "Find the tests whose earlier execution makes another test fail, by delta debugging over the test order."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Vipul Raj Jha" }]
+requires-python = ">=3.10"
+dependencies = []
+keywords = ["pytest", "flaky-tests", "test-order", "delta-debugging", "ddmin"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: Pytest",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Testing",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.4", "pytest-cov>=4", "ruff>=0.6"]
+
+[project.scripts]
+polluterfind = "polluterfind.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/vipul21435/polluterfind"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/polluterfind"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
