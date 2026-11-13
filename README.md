@@ -208,6 +208,12 @@ and took 19.8 s instead of 36.7 s.
   argument limit are not handled.
 - `discover` runs each order once, so a test that fails in only one order by chance is a
   candidate until `verify` rejects it as flaky.
+- A suite with a collection error is refused unless `--order-file` gives the test ids.
+- Any fail or error of the victim counts as the failure. The failure message is read from the
+  report but not compared, so the polluter found can cause a different failure than the one seen
+  in the suite.
+- Plugins that reorder or distribute tests through `addopts` (for example pytest-xdist's `-n`)
+  are neither handled nor tested.
 - Developed and tested on macOS; CI runs ruff and pytest on Linux with Python 3.10 and 3.13;
   Windows is untested.
 
