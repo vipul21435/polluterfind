@@ -56,7 +56,7 @@ def find_dict(result: FindResult) -> dict[str, Any]:
         "search_runs": result.search_runs,
         "test_runs": result.runs,
         "cache_hits": result.cache_hits,
-        "tests_executed": result.tests_executed,
+        "tests_run": result.tests_run,
         "seconds": round(result.seconds, 2),
         "repro_command": result.repro_command,
         "cleaner_command": result.cleaner_command,
@@ -159,7 +159,7 @@ def find_markdown(result: FindResult) -> str:
                 )
     lines.append(
         f"- test runs: {result.runs}, cache hits: {result.cache_hits}, "
-        f"tests executed: {result.tests_executed}, time: {result.seconds:.1f} s"
+        f"tests run: {result.tests_run}, time: {result.seconds:.1f} s"
     )
     if result.reordered_runs and result.reordered_example:
         requested, executed = result.reordered_example

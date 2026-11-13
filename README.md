@@ -39,7 +39,7 @@ victim `tests/test_units.py::test_known_units_are_the_defaults`
 - polluters (1, by bisection in 3 runs): `tests/test_plugins.py::test_register_furlong`
 - confirmation: victim failed in 3 of 3 reruns after the polluters (confirmed)
 - cleaners: `tests/test_units.py::test_reset_restores_defaults` (8 candidates checked)
-- test runs: 20, cache hits: 1, tests executed: 70, time: 8.2 s
+- test runs: 20, cache hits: 1, tests run: 70, time: 18.1 s
 
 reproduce:
 
@@ -185,7 +185,7 @@ sizes only its run counts (table above) were measured. With two workers, ddmin o
 and took 19.8 s instead of 36.7 s.
 
 **The bundled example** (quickstart above): 1 polluter and 1 cleaner among 11 tests, found in
-20 runs (3 of them for the search itself) and 8.2 s, as shown in the quickstart.
+20 runs (3 of them for the search itself) and 18.1 s, as shown in the quickstart.
 
 ## Limitations
 

@@ -32,7 +32,7 @@ class FindResult:
     cleaner_candidates_checked: int = 0
     runs: int = 0
     cache_hits: int = 0
-    tests_executed: int = 0
+    tests_run: int = 0
     seconds: float = 0.0
     repro_command: str = ""
     cleaner_command: str = ""
@@ -137,7 +137,7 @@ def find(
     """Verify ``victim`` against ``order``, then search for its polluters or state-setters."""
     start = time.perf_counter()
     stats = runner.stats
-    runs0, hits0, tests0 = stats.runs, stats.cache_hits, stats.tests_executed
+    runs0, hits0, tests0 = stats.runs, stats.cache_hits, stats.tests_run
     reordered0 = stats.reordered_runs
     checked = verification or verify(runner, order, victim, reruns)
     result = FindResult(checked)
@@ -168,7 +168,7 @@ def find(
 
     result.runs = stats.runs - runs0
     result.cache_hits = stats.cache_hits - hits0
-    result.tests_executed = stats.tests_executed - tests0
+    result.tests_run = stats.tests_run - tests0
     result.reordered_runs = stats.reordered_runs - reordered0
     if result.reordered_runs:
         result.reordered_example = stats.first_reordered

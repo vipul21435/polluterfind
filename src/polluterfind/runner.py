@@ -118,7 +118,7 @@ PYTEST_EXIT_CODES = {
 class RunStats:
     runs: int = 0
     cache_hits: int = 0
-    tests_executed: int = 0
+    tests_run: int = 0
     seconds: float = 0.0
     reordered_runs: int = 0
     first_reordered: tuple[tuple[str, ...], tuple[str, ...]] | None = None
@@ -155,7 +155,7 @@ class BaseRunner:
     def _record(self, key: tuple[str, ...], result: RunResult) -> None:
         with self._lock:
             self.stats.runs += 1
-            self.stats.tests_executed += len(key)
+            self.stats.tests_run += len(result.executed)  # test cases in the JUnit report
             self.stats.seconds += result.seconds
             if not result.order_respected:
                 self.stats.reordered_runs += 1

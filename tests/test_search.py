@@ -149,3 +149,14 @@ def test_search_never_repeats_a_cached_order():
     assert len(set(seen)) >= runner.stats.runs - 3
     assert result.cache_hits > 0
     assert result.cleaner_candidates_checked == plan.n - 3
+
+
+def test_tests_run_counts_reported_cases_not_requested_ids():
+    plan = plant(10, causes=1, cleaner=False, seed=0)
+    # A runner whose report drops the first requested test of every run.
+    runner = SimulatedRunner(plan.outcomes, executed=lambda order: list(order[1:]))
+    run = runner.run(plan.ids)
+    assert runner.stats.tests_run == len(plan.ids) - 1 == len(run.executed)
+    result = find(SimulatedRunner(plan.outcomes), plan.ids, plan.target_id, reruns=1)
+    assert find_dict(result)["tests_run"] == result.tests_run > 0
+    assert f"tests run: {result.tests_run}" in find_markdown(result)
