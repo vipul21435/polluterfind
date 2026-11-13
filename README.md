@@ -199,6 +199,9 @@ and took 19.8 s instead of 36.7 s.
   (there is a test that shows this).
 - ddmin's guarantee is 1-minimality, not the smallest set: with several independent polluters it
   returns one 1-minimal set, not all of them.
+- `--project` must be pytest's rootdir, the directory that holds its configuration file, because
+  the ids pytest reports are relative to it. A project directory below the rootdir is refused
+  with a message that says so.
 - When pytest regroups the requested order (parametrized fixtures of module or session scope),
   polluterfind warns but does not work around it.
 - The command line passes every id as an argument; very long orders on systems with a small

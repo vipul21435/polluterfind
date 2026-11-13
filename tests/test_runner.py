@@ -172,3 +172,10 @@ def test_reordered_run_is_counted(make_project):
     ]
     assert not result.order_respected
     assert runner.stats.reordered_runs == 1 and runner.stats.first_reordered is not None
+
+
+def test_collect_rejects_a_project_below_the_rootdir(make_project):
+    root = make_project({"sub/tests/test_x.py": "def test_v():\n    pass\n"})
+    with pytest.raises(RuntimeError, match="rootdir"):
+        collect_pytest(root / "sub")
+    assert collect_pytest(root).ids == ["sub/tests/test_x.py::test_v"]

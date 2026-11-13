@@ -442,4 +442,11 @@ def collect_pytest(
     ]
     if proc.returncode not in (0, 5) or not ids:
         raise RuntimeError(f"pytest collection failed (exit {proc.returncode}):\n{proc.stdout}")
+    first_file = ids[0].split("::")[0]
+    if not (Path(project) / first_file).is_file():
+        raise RuntimeError(
+            f"pytest reported {first_file!r}, which is not a file under the project directory: "
+            "the ids are relative to pytest's rootdir, which lies above it. Pass the rootdir "
+            "(the directory with the pytest configuration file) as --project."
+        )
     return Collected(ids, proc.stdout)
