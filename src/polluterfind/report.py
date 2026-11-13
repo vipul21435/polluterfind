@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 from . import __version__
+from .discover import DiscoverResult
 from .search import FindResult
 from .verify import BRITTLE, FLAKY, NOT_ORDER_DEPENDENT, UNRESOLVED, VICTIM, Tally, Verification
 
@@ -51,12 +52,45 @@ def find_dict(result: FindResult) -> dict[str, Any]:
         "confirmed": result.confirmed,
         "cleaners": result.cleaners,
         "cleaner_candidates_checked": result.cleaner_candidates_checked,
+        "search_runs": result.search_runs,
         "test_runs": result.runs,
         "cache_hits": result.cache_hits,
         "tests_executed": result.tests_executed,
         "seconds": round(result.seconds, 2),
         "repro_command": result.repro_command,
         "cleaner_command": result.cleaner_command,
+        "reordered_runs": result.reordered_runs,
+        "reordered_example": (
+            {"requested": list(ex[0]), "executed": list(ex[1])}
+            if (ex := result.reordered_example)
+            else None
+        ),
+    }
+
+
+def discover_dict(result: DiscoverResult) -> dict[str, Any]:
+    return {
+        "tool": f"polluterfind {__version__}",
+        "orders": [
+            {
+                "name": run.name,
+                "tests": len(run.order),
+                "failed": run.failed,
+                "order_respected": run.order_respected,
+            }
+            for run in result.orders
+        ],
+        "order_dependent_candidates": [
+            {
+                "test": c.test,
+                "outcomes": c.outcomes,
+                "result": find_dict(c.result) if c.result else None,
+            }
+            for c in result.candidates
+        ],
+        "test_runs": result.runs,
+        "cache_hits": result.cache_hits,
+        "seconds": round(result.seconds, 2),
     }
 
 
@@ -87,8 +121,11 @@ def verification_markdown(verification: Verification) -> list[str]:
 def find_markdown(result: FindResult) -> str:
     lines = ["# polluterfind report", "", *verification_markdown(result.verification)]
     if result.method != "none":
-        names = ", ".join(f"`{c}`" for c in result.causes)
-        lines.append(f"- {result.role}s ({len(result.causes)}, by {result.method}): {names}")
+        names = ", ".join(f"`{c}`" for c in result.causes) or "none found"
+        lines.append(
+            f"- {result.role}s ({len(result.causes)}, by {result.method} "
+            f"in {result.search_runs} runs): {names}"
+        )
         if result.confirmation is not None:
             confirmation = result.confirmation
             want = "failed" if result.kind == VICTIM else "passed"
@@ -98,7 +135,7 @@ def find_markdown(result: FindResult) -> str:
                 f"- confirmation: victim {want} in {count} of {len(result.confirmation.outcomes)} "
                 f"reruns after the {result.role}s ({status})"
             )
-        if result.kind == VICTIM:
+        if result.kind == VICTIM and result.causes:
             if result.cleaners:
                 cleaners = ", ".join(f"`{c}`" for c in result.cleaners)
                 lines.append(
@@ -113,6 +150,16 @@ def find_markdown(result: FindResult) -> str:
         f"- test runs: {result.runs}, cache hits: {result.cache_hits}, "
         f"tests executed: {result.tests_executed}, time: {result.seconds:.1f} s"
     )
+    if result.reordered_runs and result.reordered_example:
+        requested, executed = result.reordered_example
+        lines += [
+            "",
+            f"WARNING: in {result.reordered_runs} runs the JUnit report shows a different order "
+            "than requested (for example a parametrized fixture of module or session scope "
+            "makes pytest regroup tests), so the result may not hold for the requested order.",
+            f"first case, requested: {' '.join(requested)}",
+            f"executed: {' '.join(executed)}",
+        ]
     if result.repro_command:
         lines += ["", "reproduce:", "", "    " + result.repro_command]
     if result.cleaner_command:
@@ -122,3 +169,28 @@ def find_markdown(result: FindResult) -> str:
 
 def verify_markdown(verification: Verification) -> str:
     return "\n".join(["# polluterfind verify", "", *verification_markdown(verification)]) + "\n"
+
+
+def discover_markdown(result: DiscoverResult) -> str:
+    lines = ["# polluterfind discover", "", "| order | tests | failed | order respected |"]
+    lines.append("|---|---:|---:|---|")
+    for run in result.orders:
+        respected = "yes" if run.order_respected else "NO"
+        lines.append(f"| {run.name} | {len(run.order)} | {len(run.failed)} | {respected} |")
+    lines.append("")
+    if not result.candidates:
+        lines.append("No test changed outcome between these orders.")
+    for candidate in result.candidates:
+        pattern = ", ".join(f"{name}: {o}" for name, o in candidate.outcomes.items())
+        lines += [f"## `{candidate.test}`", "", f"outcomes: {pattern}", ""]
+        found = candidate.result
+        if found is None:
+            lines.append("not searched")
+        else:
+            lines += find_markdown(found).splitlines()[2:]
+        lines.append("")
+    lines.append(
+        f"total test runs: {result.runs}, cache hits: {result.cache_hits}, "
+        f"time: {result.seconds:.1f} s"
+    )
+    return "\n".join(lines) + "\n"
