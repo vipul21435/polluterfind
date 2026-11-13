@@ -84,3 +84,63 @@ def test_period_two_flakiness_aliases_with_the_schedule():
 
     result = verify(SimulatedRunner(outcomes), ["t::a", "t::x"], "t::x", reruns=3)
     assert result.kind == VICTIM  # wrong in truth: the test is flaky
+
+
+def test_unresolved_detail_names_the_cause():
+    from polluterfind.junit import MISSING
+    from polluterfind.runner import RunResult
+    from polluterfind.verify import unresolved_detail
+
+    def run(outcome, returncode=0, timed_out=False, executed=("t::v",)):
+        return RunResult(
+            ("t::v",), {"t::v": outcome}, list(executed), returncode, 7.0, timed_out, "a\nb\n"
+        )
+
+    assert unresolved_detail(run(SKIPPED), "t::v", "alone")["reason"] == "the victim was skipped"
+    timed = unresolved_detail(run(MISSING, None, True, ()), "t::v", "alone")
+    assert timed["reason"] == "timed out after 7 s" and timed["outcome"] == "timeout"
+    usage = unresolved_detail(run(MISSING, 4, executed=()), "t::v", "after prefix")
+    assert usage["reason"].startswith("exit code 4 (pytest usage error")
+    assert usage["order"] == "after prefix" and usage["output_tail"] == "a\nb"
+    crashed = unresolved_detail(run(MISSING, 1, executed=()), "t::v", "alone")
+    assert crashed["reason"] == "exit code 1, but no requested test is in the JUnit report"
+    other = RunResult(("t::a", "t::v"), {"t::v": MISSING}, ["t::a"], 0, 1.0)
+    assert unresolved_detail(other, "t::v", "alone")["reason"] == (
+        "exit code 0, but the victim is not in the JUnit report"
+    )
+
+
+def test_unresolved_runs_are_explained_in_the_report(make_project, tmp_path):
+    from polluterfind.report import verification_dict, verify_markdown
+    from polluterfind.runner import CommandRunner
+    from polluterfind.verify import verify
+
+    project = make_project(
+        {
+            "test_ok.py": "def test_v():\n    pass\n",
+            "test_broken.py": "def test_x(:\n    pass\n",
+        }
+    )
+    runner = CommandRunner(project, timeout=120)
+    # A stale id before the victim: pytest refuses the whole run (exit 4).
+    stale = verify(runner, ["test_ok.py::test_gone", "test_ok.py::test_v"], "test_ok.py::test_v", 1)
+    assert stale.kind == UNRESOLVED and stale.unresolved_run["order"] == "after prefix"
+    assert stale.unresolved_run["returncode"] == 4
+    markdown = verify_markdown(stale)
+    assert "first unresolved run (after prefix): exit code 4" in markdown
+    assert "not found" in markdown  # pytest's own message
+    # A module with a syntax error named by node id: pytest refuses it (exit 4 with pytest 9).
+    broken = verify(
+        runner, ["test_broken.py::test_x", "test_ok.py::test_v"], "test_ok.py::test_v", 1
+    )
+    assert broken.unresolved_run["returncode"] in (2, 4)
+    assert "SyntaxError" in broken.unresolved_run["output_tail"]
+    # An interpreter without pytest: exit 1, no report, the error text is kept.
+    fake = tmp_path / "python-without-pytest"
+    fake.write_text("#!/bin/sh\necho 'No module named pytest' >&2\nexit 1\n")
+    fake.chmod(0o755)
+    missing = verify(
+        CommandRunner(project, python=str(fake)), ["test_ok.py::test_v"], "test_ok.py::test_v", 1
+    )
+    detail = verification_dict(missing)["unresolved_run"]
+    assert detail["returncode"] == 1 and "No module named pytest" in detail["output_tail"]

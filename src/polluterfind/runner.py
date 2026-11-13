@@ -104,12 +104,12 @@ class RunResult:
         return "\n".join(self.output_tail.rstrip().splitlines()[-lines:])
 
 
-# pytest's exit codes (pytest documentation, "Exit codes"); pytest also exits with 2 when
-# collection fails, for example on a syntax error in a test module.
+# pytest's exit codes (pytest documentation, "Exit codes"). With pytest 9.2 a test module that
+# fails to import gives 2 when it is named by its path and 4 when it is named by a node id.
 PYTEST_EXIT_CODES = {
     2: "interrupted or errors during collection",
     3: "pytest internal error",
-    4: "pytest usage error, such as a test id that is not found",
+    4: "pytest usage error, such as a test id that is not found or cannot be collected",
     5: "no tests collected",
 }
 

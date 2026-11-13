@@ -13,8 +13,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from statistics import NormalDist
 
-from .junit import FAILING, PASSED
-from .runner import BaseRunner
+from .junit import FAILING, PASSED, SKIPPED
+from .runner import BaseRunner, RunResult
 
 VICTIM = "victim"
 BRITTLE = "brittle"
@@ -97,6 +97,25 @@ class Verification:
     alone: Tally
     after_prefix: Tally
     reruns: int
+    unresolved_run: dict | None = None
+
+
+def unresolved_detail(run: RunResult, victim: str, which: str) -> dict:
+    """Why a run gave no pass or fail for ``victim``: reason, exit code and last output."""
+    outcome = run.outcome(victim)
+    if outcome == SKIPPED:
+        reason = "the victim was skipped"
+    elif run.problem:
+        reason = run.problem
+    else:
+        reason = f"exit code {run.returncode}, but the victim is not in the JUnit report"
+    return {
+        "order": which,
+        "outcome": outcome,
+        "reason": reason,
+        "returncode": run.returncode,
+        "output_tail": run.tail(),
+    }
 
 
 def prefix_of(order: Sequence[str], victim: str) -> list[str]:
@@ -118,6 +137,10 @@ def verify(runner: BaseRunner, order: Sequence[str], victim: str, reruns: int = 
     prefix = prefix_of(order, victim)
     alone, after_prefix = Tally(), Tally()
     runs = runner.run_many([[victim], [*prefix, victim]] * reruns, fresh=True)
+    detail = None
     for i, run in enumerate(runs):
         (alone if i % 2 == 0 else after_prefix).add(run.outcome(victim))
-    return Verification(victim, classify(alone, after_prefix), prefix, alone, after_prefix, reruns)
+        if detail is None and not (run.passed(victim) or run.failed(victim)):
+            detail = unresolved_detail(run, victim, "alone" if i % 2 == 0 else "after prefix")
+    kind = classify(alone, after_prefix)
+    return Verification(victim, kind, prefix, alone, after_prefix, reruns, detail)

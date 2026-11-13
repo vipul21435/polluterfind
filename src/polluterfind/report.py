@@ -38,6 +38,7 @@ def verification_dict(verification: Verification) -> dict[str, Any]:
         "reruns": verification.reruns,
         "alone": tally_dict(verification.alone),
         "after_prefix": tally_dict(verification.after_prefix),
+        "unresolved_run": verification.unresolved_run,
     }
 
 
@@ -111,13 +112,21 @@ def _tally_line(label: str, tally: Tally) -> str:
 
 def verification_markdown(verification: Verification) -> list[str]:
     after = f"after the {len(verification.prefix)} tests before it"
-    return [
+    lines = [
         f"victim `{verification.victim}`",
         "",
         f"- kind: {KIND_TEXT[verification.kind]}",
         _tally_line("alone", verification.alone),
         _tally_line(after, verification.after_prefix),
     ]
+    detail = verification.unresolved_run
+    if detail:
+        lines.append(f"- first unresolved run ({detail['order']}): {detail['reason']}")
+        if detail["output_tail"]:
+            lines += ["", "  last output:", ""]
+            lines += ["      " + line for line in detail["output_tail"].splitlines()]
+            lines.append("")
+    return lines
 
 
 def find_markdown(result: FindResult) -> str:
