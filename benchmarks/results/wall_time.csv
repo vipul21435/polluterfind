@@ -1,0 +1,15 @@
+tests,scenario,method,jobs,found,runs,seconds,seconds_per_run
+100,single polluter,auto,1,True,7,3.3,0.47
+100,single polluter,ddmin,1,True,13,6.0,0.46
+100,single polluter,linear,1,True,98,33.3,0.34
+100,paired polluters,auto,1,True,44,12.7,0.29
+100,paired polluters,ddmin,1,True,38,12.1,0.32
+500,single polluter,auto,1,True,9,3.7,0.41
+500,single polluter,ddmin,1,True,15,6.0,0.4
+500,paired polluters,auto,1,True,51,23.3,0.46
+500,paired polluters,ddmin,1,True,42,17.6,0.42
+2000,single polluter,auto,1,True,11,7.5,0.68
+2000,single polluter,ddmin,1,True,18,12.2,0.68
+2000,paired polluters,auto,1,True,70,36.8,0.53
+2000,paired polluters,ddmin,1,True,58,36.7,0.63
+2000,paired polluters,ddmin,2,True,62,19.8,0.32
