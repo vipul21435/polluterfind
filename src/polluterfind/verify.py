@@ -34,7 +34,11 @@ def wilson_interval(successes: int, n: int, confidence: float = 0.95) -> tuple[f
     denominator = 1 + z * z / n
     centre = (p + z * z / (2 * n)) / denominator
     half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denominator
-    return max(0.0, centre - half), min(1.0, centre + half)
+    # The bounds are exactly 0 for no successes and exactly 1 for all successes; computed as
+    # centre - half they can miss by a rounding error (2.8e-17 for n = 4 at 95 %).
+    low = 0.0 if successes == 0 else max(0.0, centre - half)
+    high = 1.0 if successes == n else min(1.0, centre + half)
+    return low, high
 
 
 @dataclass

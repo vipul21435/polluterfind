@@ -144,3 +144,10 @@ def test_unresolved_runs_are_explained_in_the_report(make_project, tmp_path):
     )
     detail = verification_dict(missing)["unresolved_run"]
     assert detail["returncode"] == 1 and "No module named pytest" in detail["output_tail"]
+
+
+def test_wilson_bounds_are_exact_at_zero_and_n():
+    for n in range(1, 201):
+        for confidence in (0.5, 0.8, 0.9, 0.95, 0.99, 0.999):
+            assert wilson_interval(0, n, confidence)[0] == 0.0
+            assert wilson_interval(n, n, confidence)[1] == 1.0
