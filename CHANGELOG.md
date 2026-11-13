@@ -16,5 +16,8 @@ First release.
   and can run in parallel (`--jobs`) in per-worker copies of the project directory.
 - Reports in Markdown and JSON, with the shortest reproducing command, and a warning when the
   JUnit report shows that the tests ran in a different order than requested.
+- A broken run (bad id, collection or import error, missing pytest, timeout) is named with its
+  exit code and last output lines; `discover` exits 3 when a suite run is broken, and Ctrl-C
+  kills the running test processes and exits 130.
 - `polluterfind.generate`: pytest suites with planted polluters, cleaners and state-setters, and
   an in-process model of their outcomes; `benchmarks/cost_study.py` measures search cost on them.
