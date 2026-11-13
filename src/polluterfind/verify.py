@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from statistics import NormalDist
 
 from .junit import FAILING, PASSED
-from .runner import CommandRunner
+from .runner import BaseRunner
 
 VICTIM = "victim"
 BRITTLE = "brittle"
@@ -107,15 +107,17 @@ def prefix_of(order: Sequence[str], victim: str) -> list[str]:
         raise ValueError(f"{victim} is not in the test order") from None
 
 
-def verify(
-    runner: CommandRunner, order: Sequence[str], victim: str, reruns: int = 3
-) -> Verification:
-    """Run the victim alone and after its full prefix, ``reruns`` times each, and classify."""
+def verify(runner: BaseRunner, order: Sequence[str], victim: str, reruns: int = 3) -> Verification:
+    """Run the victim alone and after its full prefix, ``reruns`` times each, and classify.
+
+    The two orders alternate (alone, prefix, alone, ...), and with ``jobs > 1`` they run
+    ``jobs`` at a time.
+    """
     if reruns < 1:
         raise ValueError("reruns must be at least 1")
     prefix = prefix_of(order, victim)
     alone, after_prefix = Tally(), Tally()
-    for _ in range(reruns):
-        alone.add(runner.run([victim], fresh=True).outcome(victim))
-        after_prefix.add(runner.run([*prefix, victim], fresh=True).outcome(victim))
+    runs = runner.run_many([[victim], [*prefix, victim]] * reruns, fresh=True)
+    for i, run in enumerate(runs):
+        (alone if i % 2 == 0 else after_prefix).add(run.outcome(victim))
     return Verification(victim, classify(alone, after_prefix), prefix, alone, after_prefix, reruns)

@@ -35,12 +35,48 @@ def split(items: Sequence[T], n: int) -> list[list[T]]:
     return chunks
 
 
-def ddmin(items: Sequence[T], reproduces: Callable[[list[T]], bool]) -> list[T]:
+BatchOracle = Callable[[list[list[T]]], list[bool]]
+
+
+def first_reproducing(
+    candidates: list[list[T]],
+    reproduces: Callable[[list[T]], bool],
+    batch: BatchOracle | None = None,
+    width: int = 1,
+) -> int | None:
+    """Index of the first candidate that reproduces, testing ``width`` candidates at a time.
+
+    With ``width == 1`` this short-circuits exactly like a sequential loop. With a wider batch the
+    answer is the same (the lowest reproducing index); only the number of oracle calls can grow.
+    """
+    if width <= 1 or batch is None:
+        for i, candidate in enumerate(candidates):
+            if reproduces(candidate):
+                return i
+        return None
+    for start in range(0, len(candidates), width):
+        results = batch(candidates[start : start + width])
+        for offset, hit in enumerate(results):
+            if hit:
+                return start + offset
+    return None
+
+
+def ddmin(
+    items: Sequence[T],
+    reproduces: Callable[[list[T]], bool],
+    *,
+    batch: BatchOracle | None = None,
+    width: int = 1,
+) -> list[T]:
     """Return a 1-minimal, order-preserving sub-list of ``items`` for which ``reproduces`` holds.
 
     Preconditions (checked by the caller, not here): ``reproduces(list(items))`` is true and
     ``reproduces([])`` is false. The oracle may return false for an unresolved outcome; ddmin
     treats that the same as "does not reproduce", as in the original algorithm.
+
+    ``batch`` and ``width`` let the caller test several subsets of one round in parallel; the
+    result is identical to the sequential one.
     """
     current = list(items)
     n = 2
@@ -48,17 +84,17 @@ def ddmin(items: Sequence[T], reproduces: Callable[[list[T]], bool]) -> list[T]:
         chunks = split(current, n)
         n = len(chunks)
         reduced = False
-        for chunk in chunks:
-            if reproduces(chunk):
-                current, n, reduced = chunk, 2, True
-                break
-        if not reduced and n > 2:
+        hit = first_reproducing(chunks, reproduces, batch, width)
+        if hit is not None:
+            current, n, reduced = chunks[hit], 2, True
+        elif n > 2:
             # With two chunks the complements are the chunks themselves, already tested.
-            for i in range(n):
-                complement = [x for j, chunk in enumerate(chunks) if j != i for x in chunk]
-                if reproduces(complement):
-                    current, n, reduced = complement, max(n - 1, 2), True
-                    break
+            complements = [
+                [x for j, chunk in enumerate(chunks) if j != i for x in chunk] for i in range(n)
+            ]
+            hit = first_reproducing(complements, reproduces, batch, width)
+            if hit is not None:
+                current, n, reduced = complements[hit], max(n - 1, 2), True
         if not reduced:
             if n >= len(current):
                 break
@@ -90,3 +126,19 @@ def is_one_minimal(subset: Sequence[T], reproduces: Callable[[list[T]], bool]) -
     if not reproduces(items):
         return False
     return all(not reproduces(items[:i] + items[i + 1 :]) for i in range(len(items)))
+
+
+def linear_single(
+    items: Sequence[T],
+    reproduces: Callable[[list[T]], bool],
+    batch: BatchOracle | None = None,
+    width: int = 1,
+) -> T | None:
+    """Try each element alone, in order, and return the first that reproduces (or ``None``).
+
+    This is the baseline the cost study compares against: up to ``len(items)`` calls for one
+    culprit, and no answer at all when the failure needs two elements together.
+    """
+    candidates = [[x] for x in items]
+    hit = first_reproducing(candidates, reproduces, batch, width)
+    return None if hit is None else candidates[hit][0]

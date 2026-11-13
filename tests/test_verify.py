@@ -68,3 +68,19 @@ def test_prefix_of():
     assert prefix_of(["a", "b", "c"], "a") == []
     with pytest.raises(ValueError, match="not in the test order"):
         prefix_of(["a"], "z")
+
+
+def test_period_two_flakiness_aliases_with_the_schedule():
+    """Documented limitation: an outcome that flips on every run lines up with the
+    alternating alone, prefix, alone, ... schedule and looks order-dependent."""
+    from polluterfind.runner import SimulatedRunner
+    from polluterfind.verify import verify
+
+    calls = {"n": 0}
+
+    def outcomes(order):
+        calls["n"] += 1
+        return {t: FAILED if calls["n"] % 2 == 0 and t == "t::x" else PASSED for t in order}
+
+    result = verify(SimulatedRunner(outcomes), ["t::a", "t::x"], "t::x", reruns=3)
+    assert result.kind == VICTIM  # wrong in truth: the test is flaky
