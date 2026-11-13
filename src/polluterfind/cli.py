@@ -120,6 +120,15 @@ def _emit(text: str, out: Path | None) -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    try:
+        return _main(argv)
+    except KeyboardInterrupt:
+        # The runner has already killed the test processes it started.
+        print("polluterfind: interrupted", file=sys.stderr)
+        return 130
+
+
+def _main(argv: Sequence[str] | None) -> int:
     args = build_parser().parse_args(argv)
     for name in ("reruns", "jobs"):
         if getattr(args, name) < 1:

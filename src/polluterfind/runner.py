@@ -212,8 +212,15 @@ class BaseRunner:
         if self.jobs == 1 or len(to_run) <= 1:
             outputs = [self._run_one(key) for key in to_run]
         else:
-            with ThreadPoolExecutor(max_workers=self.jobs) as pool:
+            pool = ThreadPoolExecutor(max_workers=self.jobs)
+            try:
                 outputs = list(pool.map(self._run_one, to_run))
+            except BaseException:
+                # Ctrl-C reaches only this thread: stop the workers' processes, then wait.
+                self.kill_active()
+                pool.shutdown(wait=True, cancel_futures=True)
+                raise
+            pool.shutdown()
         if fresh:
             for i, result in enumerate(outputs):
                 results[i] = result
@@ -222,6 +229,9 @@ class BaseRunner:
                 for i in pending[key]:
                     results[i] = result
         return [results[i] for i in range(len(keys))]
+
+    def kill_active(self) -> None:
+        pass
 
     def close(self) -> None:
         pass
@@ -259,6 +269,7 @@ class CommandRunner(BaseRunner):
         self.timeout = timeout
         self.env = env
         self._counter = 0
+        self._active: set[subprocess.Popen] = set()
         self._workdir = Path(tempfile.mkdtemp(prefix="polluterfind-"))
         self._finalizer = weakref.finalize(self, shutil.rmtree, self._workdir, True)
         self.slots: list[Path] = [self.project]
@@ -323,6 +334,8 @@ class CommandRunner(BaseRunner):
             stderr=subprocess.STDOUT,
             start_new_session=os.name == "posix",
         )
+        with self._lock:
+            self._active.add(process)
         timed_out = False
         try:
             output, _ = process.communicate(timeout=self.timeout)
@@ -330,6 +343,15 @@ class CommandRunner(BaseRunner):
             timed_out = True
             _kill(process)
             output, _ = process.communicate()
+        except BaseException:
+            # Interrupted (Ctrl-C) or failed while waiting: the child runs in its own session
+            # and would not see the signal, so kill its whole process group before leaving.
+            _kill(process)
+            process.communicate()
+            raise
+        finally:
+            with self._lock:
+                self._active.discard(process)
         seconds = time.perf_counter() - start
         ids = list(order)
         cases = []
@@ -349,7 +371,15 @@ class CommandRunner(BaseRunner):
             output_tail=output.decode("utf-8", "replace")[-2000:],
         )
 
+    def kill_active(self) -> None:
+        """Kill the process groups of all runs in progress."""
+        with self._lock:
+            active = list(self._active)
+        for process in active:
+            _kill(process)
+
     def close(self) -> None:
+        self.kill_active()
         self._finalizer()
 
 

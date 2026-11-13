@@ -91,3 +91,70 @@ def test_discover_with_a_stale_id_exits_with_an_error(tmp_path, capsys):
     assert "broken suite runs: given, reversed" in captured.err
     assert "run broken: exit code 4 (pytest usage error" in captured.out
     assert "not found" in captured.out  # pytest's own message, from the output tail
+
+
+def _alive(pid: int) -> bool:
+    import os
+    import subprocess
+
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    state = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True)
+    return state.stdout.strip() not in ("",) and not state.stdout.strip().startswith("Z")
+
+
+def test_interrupt_kills_the_test_processes(tmp_path):
+    import os
+    import signal
+    import subprocess
+    import sys
+    import time
+
+    import pytest
+
+    if os.name != "posix":
+        pytest.skip("process groups are POSIX only")
+    from suites import write_project
+
+    project = write_project(
+        tmp_path / "proj",
+        {
+            "test_hang.py": """
+                import os
+                import pathlib
+                import subprocess
+                import time
+
+                def test_hang():
+                    child = subprocess.Popen(["sleep", "60"])
+                    pathlib.Path(os.environ["PF_PIDS"]).write_text(f"{os.getpid()} {child.pid}")
+                    time.sleep(60)
+            """
+        },
+    )
+    order = tmp_path / "order.txt"
+    order.write_text("test_hang.py::test_hang\n")
+    pids_file = tmp_path / "pids"
+    command = [sys.executable, "-m", "polluterfind", "find", "test_hang.py::test_hang"]
+    command += ["--project", str(project), "--order-file", str(order), "--timeout", "120"]
+    proc = subprocess.Popen(
+        command,
+        env={**os.environ, "PF_PIDS": str(pids_file)},
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    deadline = time.monotonic() + 60
+    while not pids_file.exists() or len(pids_file.read_text().split()) < 2:
+        assert time.monotonic() < deadline and proc.poll() is None, "test never started"
+        time.sleep(0.1)
+    pids = [int(p) for p in pids_file.read_text().split()]
+    proc.send_signal(signal.SIGINT)
+    _, err = proc.communicate(timeout=60)
+    assert proc.returncode == 130 and "interrupted" in err and "Traceback" not in err
+    deadline = time.monotonic() + 15
+    while any(_alive(pid) for pid in pids) and time.monotonic() < deadline:
+        time.sleep(0.1)
+    assert not any(_alive(pid) for pid in pids)
