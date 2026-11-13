@@ -207,7 +207,9 @@ and took 19.8 s instead of 36.7 s.
 - The command line passes every id as an argument; very long orders on systems with a small
   argument limit are not handled.
 - `discover` runs each order once, so a test that fails in only one order by chance is a
-  candidate until `verify` rejects it as flaky. Tested on macOS and Linux only.
+  candidate until `verify` rejects it as flaky.
+- Developed and tested on macOS; CI runs ruff and pytest on Linux with Python 3.10 and 3.13;
+  Windows is untested.
 
 ## Related tools
 
