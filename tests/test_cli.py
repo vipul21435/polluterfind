@@ -66,3 +66,15 @@ def test_usage_errors(tmp_path, capsys):
     assert main(["find", plan.target_id, *base, "--command", "pytest {tests}"]) == 2
     assert "{junit}" in capsys.readouterr().err
     assert main(["find", plan.target_id, "--project", str(tmp_path / "missing")]) == 2
+
+
+def test_module_entry_point():
+    import subprocess
+    import sys
+
+    from polluterfind import __version__
+
+    proc = subprocess.run(
+        [sys.executable, "-m", "polluterfind", "--version"], capture_output=True, text=True
+    )
+    assert proc.returncode == 0 and proc.stdout.strip() == f"polluterfind {__version__}"
