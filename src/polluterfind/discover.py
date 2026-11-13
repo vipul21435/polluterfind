@@ -26,6 +26,8 @@ class OrderRun:
     order: list[str]
     failed: list[str]
     order_respected: bool
+    problem: str | None = None
+    output_tail: str = ""
 
 
 @dataclass
@@ -50,6 +52,11 @@ class DiscoverResult:
     runs: int = 0
     cache_hits: int = 0
     seconds: float = 0.0
+
+    @property
+    def broken_runs(self) -> list[OrderRun]:
+        """Suite runs that said nothing about the tests (bad id, crash, timeout, ...)."""
+        return [run for run in self.orders if run.problem]
 
 
 def suite_orders(order: Sequence[str], k: int, seed: int) -> list[tuple[str, list[str]]]:
@@ -79,12 +86,14 @@ def discover(
     named = suite_orders(order, orders, seed)
     results = runner.run_many([o for _, o in named])
     order_runs = [
-        OrderRun(name, o, [t for t in o if r.failed(t)], r.order_respected)
+        OrderRun(name, o, [t for t in o if r.failed(t)], r.order_respected, r.problem, r.tail())
         for (name, o), r in zip(named, results, strict=True)
     ]
+    # A broken run is left out of the comparison; it is reported instead.
+    usable = [(name, r) for (name, _), r in zip(named, results, strict=True) if not r.problem]
     candidates = []
     for test in order:
-        outcomes = {name: r.outcome(test) for (name, _), r in zip(named, results, strict=True)}
+        outcomes = {name: r.outcome(test) for name, r in usable}
         values = set(outcomes.values())
         if PASSED in values and values & FAILING:
             candidates.append(Candidate(test, outcomes))

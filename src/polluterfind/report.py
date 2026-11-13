@@ -77,6 +77,8 @@ def discover_dict(result: DiscoverResult) -> dict[str, Any]:
                 "tests": len(run.order),
                 "failed": run.failed,
                 "order_respected": run.order_respected,
+                "problem": run.problem,
+                "output_tail": run.output_tail if run.problem else "",
             }
             for run in result.orders
         ],
@@ -176,10 +178,16 @@ def discover_markdown(result: DiscoverResult) -> str:
     lines.append("|---|---:|---:|---|")
     for run in result.orders:
         respected = "yes" if run.order_respected else "NO"
-        lines.append(f"| {run.name} | {len(run.order)} | {len(run.failed)} | {respected} |")
+        failed = f"run broken: {run.problem}" if run.problem else str(len(run.failed))
+        lines.append(f"| {run.name} | {len(run.order)} | {failed} | {respected} |")
     lines.append("")
-    if not result.candidates:
-        lines.append("No test changed outcome between these orders.")
+    for run in result.broken_runs:
+        lines += [f"ERROR: the {run.name} run is broken ({run.problem}); last output:", ""]
+        lines += ["    " + line for line in run.output_tail.splitlines()] + [""]
+    if len(result.broken_runs) == len(result.orders):
+        lines.append("No usable run: nothing can be said about order dependence.")
+    elif not result.candidates:
+        lines.append("No test changed outcome between the usable orders.")
     for candidate in result.candidates:
         pattern = ", ".join(f"{name}: {o}" for name, o in candidate.outcomes.items())
         lines += [f"## `{candidate.test}`", "", f"outcomes: {pattern}", ""]

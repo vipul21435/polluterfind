@@ -71,7 +71,7 @@ def test_nothing_order_dependent():
     runner = SimulatedRunner(lambda o: {t: PASSED for t in o})
     result = discover(runner, order, orders=1)
     assert result.candidates == [] and result.runs == 3
-    assert "No test changed outcome" in discover_markdown(result)
+    assert "No test changed outcome between the usable orders" in discover_markdown(result)
 
 
 def test_no_search_lists_candidates_only():
@@ -81,3 +81,15 @@ def test_no_search_lists_candidates_only():
     assert [c.test for c in result.candidates] == [plan.target_id]
     assert result.candidates[0].result is None
     assert "not searched" in discover_markdown(result)
+
+
+def test_runs_without_outcomes_are_broken_not_all_clear():
+    runner = SimulatedRunner(lambda order: {}, executed=lambda order: [])
+    result = discover(runner, ["t::a", "t::b"], orders=1)
+    assert [run.problem for run in result.orders] == [
+        "exit code 0, but no requested test is in the JUnit report"
+    ] * 3
+    assert result.candidates == [] and len(result.broken_runs) == 3
+    markdown = discover_markdown(result)
+    assert "No usable run" in markdown and "No test changed outcome" not in markdown
+    assert discover_dict(result)["orders"][0]["problem"].startswith("exit code 0")

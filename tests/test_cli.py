@@ -78,3 +78,16 @@ def test_module_entry_point():
         [sys.executable, "-m", "polluterfind", "--version"], capture_output=True, text=True
     )
     assert proc.returncode == 0 and proc.stdout.strip() == f"polluterfind {__version__}"
+
+
+def test_discover_with_a_stale_id_exits_with_an_error(tmp_path, capsys):
+    plan = plant(3, causes=1, cleaner=False)
+    project = plan.write(tmp_path / "proj")
+    order_file = tmp_path / "order.txt"
+    order_file.write_text("\n".join([*plan.ids, "tests/test_m000.py::test_gone"]))
+    args = ["discover", "--project", str(project), "--order-file", str(order_file)]
+    assert main([*args, "--orders", "0"]) == 3
+    captured = capsys.readouterr()
+    assert "broken suite runs: given, reversed" in captured.err
+    assert "run broken: exit code 4 (pytest usage error" in captured.out
+    assert "not found" in captured.out  # pytest's own message, from the output tail

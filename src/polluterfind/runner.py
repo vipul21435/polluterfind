@@ -83,6 +83,36 @@ class RunResult:
         ran = set(self.executed)
         return self.executed == [t for t in self.order if t in ran]
 
+    @property
+    def problem(self) -> str | None:
+        """Why this run says nothing about the tests, or ``None`` when it ran normally.
+
+        A run is broken when it timed out, when the command exited with a code other than 0
+        (all passed) or 1 (some failed), or when none of the requested tests is in the report.
+        """
+        if self.timed_out:
+            return f"timed out after {self.seconds:.0f} s"
+        if self.returncode not in (0, 1):
+            meaning = PYTEST_EXIT_CODES.get(self.returncode, "")
+            return f"exit code {self.returncode}" + (f" ({meaning})" if meaning else "")
+        if self.order and not self.executed:
+            return f"exit code {self.returncode}, but no requested test is in the JUnit report"
+        return None
+
+    def tail(self, lines: int = 12) -> str:
+        """The last ``lines`` lines of the command's output."""
+        return "\n".join(self.output_tail.rstrip().splitlines()[-lines:])
+
+
+# pytest's exit codes (pytest documentation, "Exit codes"); pytest also exits with 2 when
+# collection fails, for example on a syntax error in a test module.
+PYTEST_EXIT_CODES = {
+    2: "interrupted or errors during collection",
+    3: "pytest internal error",
+    4: "pytest usage error, such as a test id that is not found",
+    5: "no tests collected",
+}
+
 
 @dataclass
 class RunStats:

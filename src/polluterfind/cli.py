@@ -180,4 +180,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         text = to_json(discover_dict(found)) if args.format == "json" else discover_markdown(found)
         _emit(text, args.out)
+        if found.broken_runs:
+            names = ", ".join(run.name for run in found.broken_runs)
+            print(f"polluterfind: broken suite runs: {names}", file=sys.stderr)
+            return 3
         return 0

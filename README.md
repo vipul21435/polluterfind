@@ -57,8 +57,9 @@ cleaner scan; the time is wall clock on a loaded laptop and is nearly all pytest
 test id: it runs the whole suite in the given order, reversed and in `--orders` seeded random
 orders (default 3), lists the tests whose outcome changed and searches each one. All three
 commands take `--format json`, `--out FILE` and `--jobs N`. `verify` exits 0 when the test is
-order-dependent, `find` when the cause was found and confirmed, `discover` when it completed;
-otherwise 1, and 2 on usage errors. `examples/find_polluter.py` does the same from Python.
+order-dependent, `find` when the cause was found and confirmed, `discover` when every suite run
+was usable; otherwise 1, 2 on usage errors, and 3 when `discover` had a broken suite run (a bad
+id, a crash, a timeout), which it reports with the run's last output lines. `examples/find_polluter.py` does the same from Python.
 
 ## How it works
 
