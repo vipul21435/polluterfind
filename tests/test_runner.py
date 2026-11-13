@@ -179,3 +179,16 @@ def test_collect_rejects_a_project_below_the_rootdir(make_project):
     with pytest.raises(RuntimeError, match="rootdir"):
         collect_pytest(root / "sub")
     assert collect_pytest(root).ids == ["sub/tests/test_x.py::test_v"]
+
+
+def test_collect_shows_stderr_and_times_out(tmp_path):
+    no_pytest = tmp_path / "python-without-pytest"
+    no_pytest.write_text("#!/bin/sh\necho 'No module named pytest' >&2\nexit 1\n")
+    slow = tmp_path / "python-that-hangs"
+    slow.write_text("#!/bin/sh\nexec sleep 30\n")
+    for script in (no_pytest, slow):
+        script.chmod(0o755)
+    with pytest.raises(RuntimeError, match="No module named pytest"):
+        collect_pytest(tmp_path, python=str(no_pytest))
+    with pytest.raises(RuntimeError, match="timed out after 1 s"):
+        collect_pytest(tmp_path, python=str(slow), timeout=1)

@@ -141,7 +141,7 @@ def _main(argv: Sequence[str] | None) -> int:
         if args.order_file:
             order = read_order(args.order_file)
         else:
-            order = collect_pytest(args.project, args.python).ids
+            order = collect_pytest(args.project, args.python, timeout=args.timeout).ids
         victim = getattr(args, "victim", None)
         if victim is not None and victim not in order:
             print(f"polluterfind: {victim} is not in the test order", file=sys.stderr)

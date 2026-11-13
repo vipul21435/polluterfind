@@ -429,19 +429,28 @@ class Collected:
 
 
 def collect_pytest(
-    project: str | Path, python: str | None = None, extra_args: Sequence[str] = ()
+    project: str | Path,
+    python: str | None = None,
+    extra_args: Sequence[str] = (),
+    timeout: float | None = None,
 ) -> Collected:
     """List the suite's node ids in pytest's default order (``--collect-only -q``)."""
     argv = [python or sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:randomly"]
     argv += ["-p", "no:cacheprovider", *extra_args]
-    proc = subprocess.run(argv, cwd=Path(project), capture_output=True, text=True)
+    try:
+        proc = subprocess.run(
+            argv, cwd=Path(project), capture_output=True, text=True, timeout=timeout
+        )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"pytest collection timed out after {timeout:g} s") from None
     ids = [
         line.strip()
         for line in proc.stdout.splitlines()
         if "::" in line and not line.startswith((" ", "<", "="))
     ]
     if proc.returncode not in (0, 5) or not ids:
-        raise RuntimeError(f"pytest collection failed (exit {proc.returncode}):\n{proc.stdout}")
+        output = "\n".join(part.rstrip() for part in (proc.stdout, proc.stderr) if part.strip())
+        raise RuntimeError(f"pytest collection failed (exit {proc.returncode}):\n{output}")
     first_file = ids[0].split("::")[0]
     if not (Path(project) / first_file).is_file():
         raise RuntimeError(
