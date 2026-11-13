@@ -227,6 +227,7 @@ and took 19.8 s instead of 36.7 s.
   lists order-dependent tests in open-source projects, with a Python list (`py-data.csv`) whose
   categories include OD-Vic and OD-Brit in the iFixFlakies sense. Its page states no licence, and
   no data from it is included here.
+- [hunkfix](https://github.com/vipul21435/hunkfix): checks and repairs the unified diffs that language models write.
 
 References: Zeller and Hildebrandt, IEEE TSE 28(2), 2002, doi:10.1109/32.988498; Lam, Oei, Shi,
 Marinov and Xie, iDFlakies, 2019, doi:10.1109/ICST.2019.00038; Shi, Lam, Oei, Xie and Marinov,
